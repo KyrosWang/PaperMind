@@ -45,6 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare Compose environment
+        run: cp .env.example .env
       - name: Validate Compose
         run: POSTGRES_PASSWORD=ci APP_API_KEY=ci docker compose config --quiet
       - name: Build images
