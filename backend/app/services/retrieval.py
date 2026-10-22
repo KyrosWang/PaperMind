@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import DocumentChunk
+from app.models import DocumentChunk, Paper
 from app.services.providers import EmbeddingProvider
 
 
@@ -26,10 +26,16 @@ def retrieve(
     embedding_provider: EmbeddingProvider | None,
 ) -> list[RetrievalResult]:
     """Combine PostgreSQL FTS and pgvector rankings with reciprocal-rank fusion."""
+    active_attachment_id = db.scalar(select(Paper.active_attachment_id).where(Paper.id == paper_id))
+    if active_attachment_id is None:
+        return []
     base = (
         select(DocumentChunk)
         .options(joinedload(DocumentChunk.section))
-        .where(DocumentChunk.paper_id == paper_id)
+        .where(
+            DocumentChunk.paper_id == paper_id,
+            DocumentChunk.attachment_id == active_attachment_id,
+        )
     )
     dialect = db.bind.dialect.name if db.bind else ""
     candidates: dict[uuid.UUID, DocumentChunk] = {}

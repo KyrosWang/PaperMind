@@ -34,12 +34,14 @@ export interface Paper {
   journal: string | null;
   publication_year: number | null;
   url: string | null;
+  active_attachment_id: string | null;
   authors: Author[];
   attachments: Attachment[];
   sections?: Section[];
 }
 
 export interface Citation {
+  evidence_index: number;
   chunk_id: string;
   section: string | null;
   page: number | null;

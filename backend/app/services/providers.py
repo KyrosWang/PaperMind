@@ -1,5 +1,7 @@
+import json
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 
 from openai import AsyncOpenAI, OpenAI
 
@@ -10,6 +12,12 @@ class ProviderConfigurationError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class LLMResponse:
+    answer: str
+    citations: list[int]
+
+
 class EmbeddingProvider(ABC):
     @abstractmethod
     def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
@@ -17,7 +25,7 @@ class EmbeddingProvider(ABC):
 
 class LLMProvider(ABC):
     @abstractmethod
-    async def chat(self, messages: list[dict[str, str]]) -> str: ...
+    async def chat(self, messages: list[dict[str, str]]) -> LLMResponse: ...
 
     @abstractmethod
     async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
@@ -44,9 +52,38 @@ class OpenAILLMProvider(LLMProvider):
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
 
-    async def chat(self, messages: list[dict[str, str]]) -> str:
-        result = await self.client.chat.completions.create(model=self.model, messages=messages)  # type: ignore[arg-type]
-        return result.choices[0].message.content or ""
+    async def chat(self, messages: list[dict[str, str]]) -> LLMResponse:
+        result = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,  # type: ignore[arg-type]
+            response_format={  # type: ignore[arg-type]
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "papermind_answer",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "answer": {"type": "string"},
+                            "citations": {
+                                "type": "array",
+                                "items": {"type": "integer"},
+                            },
+                        },
+                        "required": ["answer", "citations"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        )
+        payload = json.loads(result.choices[0].message.content or "{}")
+        answer = payload.get("answer")
+        citations = payload.get("citations")
+        if not isinstance(answer, str) or not isinstance(citations, list):
+            raise ValueError("LLM returned an invalid structured answer")
+        if any(not isinstance(index, int) or isinstance(index, bool) for index in citations):
+            raise ValueError("LLM returned invalid citation indices")
+        return LLMResponse(answer=answer, citations=citations)
 
     async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         stream = await self.client.chat.completions.create(

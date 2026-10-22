@@ -1,4 +1,4 @@
-from app.models import Author, Paper, Tag
+from app.models import Author, Paper, PaperAuthor, Tag
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,8 +6,15 @@ from sqlalchemy.orm import Session
 def test_paper_relationships_round_trip(db: Session) -> None:
     paper = Paper(
         title="A test paper",
-        authors=[Author(first_name="Ada", last_name="Lovelace", normalized_name="ada lovelace")],
         tags=[Tag(name="methods")],
+        author_links=[
+            PaperAuthor(
+                author=Author(
+                    first_name="Ada", last_name="Lovelace", normalized_name="ada lovelace"
+                ),
+                author_order=0,
+            )
+        ],
     )
     db.add(paper)
     db.commit()

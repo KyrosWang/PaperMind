@@ -19,6 +19,17 @@ from app.worker import process_attachment
 router = APIRouter()
 
 
+def _cancel_inflight_processing(db: Session, attachment_id: uuid.UUID | None) -> None:
+    if attachment_id is None:
+        return
+    attachment = db.get(Attachment, attachment_id)
+    if attachment is None:
+        return
+    attachment.processing_token = None
+    if attachment.processing_status in {ProcessingStatus.parsing, ProcessingStatus.embedding}:
+        attachment.processing_status = ProcessingStatus.pending
+
+
 def _paper_query():
     return select(Paper).options(
         selectinload(Paper.authors),
@@ -81,8 +92,10 @@ def upload_attachment(
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
     file: Annotated[UploadFile, File()],
+    replace_active: bool = False,
 ) -> Attachment:
-    if db.get(Paper, paper_id) is None:
+    paper = db.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
+    if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
     if file.content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="Only PDF uploads are accepted")
@@ -127,11 +140,45 @@ def upload_attachment(
     )
     db.add(attachment)
     try:
+        db.flush()
+        should_process = paper.active_attachment_id is None or replace_active
+        if should_process:
+            _cancel_inflight_processing(db, paper.active_attachment_id)
+            paper.active_attachment_id = attachment.id
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         storage.delete_file(relative_path)
         raise HTTPException(status_code=409, detail="This PDF is already attached") from exc
+    db.refresh(attachment)
+    if should_process:
+        process_attachment.delay(str(attachment.id))
+    return attachment
+
+
+@router.post(
+    "/{paper_id}/attachments/{attachment_id}/activate",
+    response_model=AttachmentRead,
+)
+def activate_attachment(
+    paper_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+) -> Attachment:
+    """Make an existing PDF active and enqueue a fresh, idempotent processing run."""
+    paper = db.scalar(select(Paper).where(Paper.id == paper_id).with_for_update())
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    attachment = db.scalar(
+        select(Attachment).where(Attachment.id == attachment_id, Attachment.paper_id == paper_id)
+    )
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    _cancel_inflight_processing(db, paper.active_attachment_id)
+    paper.active_attachment_id = attachment.id
+    attachment.processing_status = ProcessingStatus.pending
+    attachment.processing_error = None
+    db.commit()
     db.refresh(attachment)
     process_attachment.delay(str(attachment.id))
     return attachment

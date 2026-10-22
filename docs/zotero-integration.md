@@ -11,7 +11,9 @@ python -m app.cli zotero-sync
 PaperMind stores Zotero's library version after a complete transaction. Later syncs pass `since`
 to the items, collections, and deleted-object endpoints and page in batches of 100. New and changed
 top-level bibliographic items are upserted. Authors, tags, collections, and parent collection links
-are reconciled. Attachments, notes, and annotations are ignored because PDFs belong to PaperMind.
+are reconciled. Author creator order is preserved explicitly, while normalized display names are
+not treated as globally unique person identifiers. Attachments, notes, and annotations are ignored
+because PDFs belong to PaperMind.
 
 Zotero deletions are soft-applied to papers, preserving local storage and history. A failed request
 does not advance the version. V1 is read-only and deliberately contains no Zotero mutation code;

@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     embedding_dimension: int = Field(default=1536, ge=1)
+    chat_history_messages: int = Field(default=8, ge=0, le=50)
 
     @field_validator("data_root", mode="before")
     @classmethod

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import Author, Collection, Paper, Tag, ZoteroSyncState
+from app.models import Author, Collection, Paper, PaperAuthor, Tag, ZoteroSyncState
 from app.schemas import SyncResult
 
 logger = structlog.get_logger(__name__)
@@ -119,15 +119,40 @@ class ZoteroClient:
         return response.json(), version
 
 
-def _get_or_create_author(db: Session, creator: dict[str, Any]) -> Author:
+def _author_fields(creator: dict[str, Any]) -> tuple[str | None, str | None, str]:
     first = creator.get("firstName") or None
     last = creator.get("lastName") or creator.get("name") or None
     normalized = normalize_author(first, last) or "unknown"
-    author = db.scalar(select(Author).where(Author.normalized_name == normalized))
-    if author is None:
-        author = Author(first_name=first, last_name=last, normalized_name=normalized)
-        db.add(author)
-    return author
+    return first, last, normalized
+
+
+def _sync_authors(paper: Paper, creators: list[dict[str, Any]]) -> None:
+    """Preserve Zotero order without treating a display name as global identity."""
+    existing = {link.author_order: link for link in paper.author_links}
+    links: list[PaperAuthor] = []
+    for order, creator in enumerate(creators):
+        if creator.get("creatorType") != "author":
+            continue
+        first, last, normalized = _author_fields(creator)
+        previous = existing.get(order)
+        if (
+            previous is not None
+            and previous.creator_type == "author"
+            and previous.author.first_name == first
+            and previous.author.last_name == last
+            and previous.author.normalized_name == normalized
+        ):
+            author = previous.author
+        else:
+            author = Author(first_name=first, last_name=last, normalized_name=normalized)
+        links.append(
+            PaperAuthor(
+                author=author,
+                author_order=order,
+                creator_type="author",
+            )
+        )
+    paper.author_links = links
 
 
 def sync_zotero(db: Session, settings: Settings) -> SyncResult:
@@ -181,11 +206,7 @@ def sync_zotero(db: Session, settings: Settings) -> SyncResult:
             for name, value in fields.items():
                 setattr(paper, name, value)
         paper.zotero_deleted_at = None
-        paper.authors = [
-            _get_or_create_author(db, creator)
-            for creator in data.get("creators", [])
-            if creator.get("creatorType") == "author"
-        ]
+        _sync_authors(paper, data.get("creators", []))
         paper.collections = [
             collection_map[key] for key in data.get("collections", []) if key in collection_map
         ]

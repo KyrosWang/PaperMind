@@ -49,7 +49,63 @@ def test_upload_accepts_pdf_and_enqueues(db: Session, tmp_path: Path, monkeypatc
     )
     attachment = paper_routes.upload_attachment(paper.id, db, make_settings(tmp_path), file)
     assert attachment.processing_status == "pending"
+    db.refresh(paper)
+    assert paper.active_attachment_id == attachment.id
     delay.assert_called_once()
+
+
+def test_second_pdf_stays_inactive_unless_replacement_is_explicit(
+    db: Session, tmp_path: Path, monkeypatch
+) -> None:
+    paper = Paper(title="Replacement test")
+    db.add(paper)
+    db.commit()
+    delay = Mock()
+    monkeypatch.setattr(paper_routes.process_attachment, "delay", delay)
+
+    first = paper_routes.upload_attachment(
+        paper.id,
+        db,
+        make_settings(tmp_path),
+        UploadFile(
+            filename="first.pdf",
+            file=BytesIO(b"%PDF-1.4\nfirst\n%%EOF"),
+            headers={"content-type": "application/pdf"},
+        ),
+    )
+    second = paper_routes.upload_attachment(
+        paper.id,
+        db,
+        make_settings(tmp_path),
+        UploadFile(
+            filename="second.pdf",
+            file=BytesIO(b"%PDF-1.4\nsecond\n%%EOF"),
+            headers={"content-type": "application/pdf"},
+        ),
+    )
+    db.refresh(paper)
+    assert paper.active_attachment_id == first.id
+    assert delay.call_count == 1
+
+    replacement = paper_routes.upload_attachment(
+        paper.id,
+        db,
+        make_settings(tmp_path),
+        UploadFile(
+            filename="replacement.pdf",
+            file=BytesIO(b"%PDF-1.4\nreplacement\n%%EOF"),
+            headers={"content-type": "application/pdf"},
+        ),
+        replace_active=True,
+    )
+    db.refresh(paper)
+    assert paper.active_attachment_id == replacement.id
+    assert delay.call_count == 2
+
+    paper_routes.activate_attachment(paper.id, second.id, db)
+    db.refresh(paper)
+    assert paper.active_attachment_id == second.id
+    assert delay.call_count == 3
 
 
 def test_api_requires_key(tmp_path: Path) -> None:

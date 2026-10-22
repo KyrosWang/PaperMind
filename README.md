@@ -122,6 +122,7 @@ All configuration is environment-based. `.env` is ignored; `.env.example` contai
 | `OPENAI_MODEL` | Chat model |
 | `OPENAI_EMBEDDING_MODEL`, `EMBEDDING_DIMENSION` | Embedding configuration |
 | `CHUNK_TARGET_TOKENS`, `CHUNK_OVERLAP_TOKENS` | Scientific chunk sizing |
+| `CHAT_HISTORY_MESSAGES` | Maximum prior messages sent with a follow-up question (default 8) |
 
 ## Zotero synchronization
 
@@ -143,10 +144,13 @@ Open a synchronized/demo paper and choose **Upload PDF**, or post multipart form
 `/api/papers/{paper_id}/attachments`. The API checks size, MIME/signature, and SHA-256 duplication,
 then stores `papers/<paper_uuid>/<attachment_uuid>/original.pdf` under `DATA_ROOT`.
 
-The worker asks GROBID for TEI XML, preserves sections/paragraphs and best-effort pages, chunks
-within sections, and embeds in batches. Retrieval is paper-scoped reciprocal-rank fusion of
-PostgreSQL full-text search and pgvector cosine similarity. The AI response stores supporting chunk
-links; evidence buttons jump the reader to a page when GROBID supplied one. See
+The first PDF becomes the paper's active PDF. A later upload is stored without replacing it unless
+the caller explicitly requests replacement; the UI's **Replace active PDF** action does so and
+triggers reprocessing. The worker asks GROBID for TEI XML, preserves sections/paragraphs and
+best-effort pages, chunks within sections, and embeds in batches. Retrieval is scoped to the active
+PDF and combines PostgreSQL full-text search with pgvector cosine similarity. Assistant responses
+store retrieved context separately from the excerpts actually cited; evidence buttons jump the
+reader to a page when GROBID supplied one. See
 [PDF processing](docs/pdf-processing.md).
 
 OpenAI is isolated behind `EmbeddingProvider` and `LLMProvider`. Adding Anthropic, Gemini, Ollama,
@@ -192,7 +196,7 @@ fixtures, and mocks; no real Zotero or OpenAI credential is required.
 ## V1 limitations
 
 - Single-user shared-key authentication; no public hosting or roles.
-- One PDF is shown at a time; replacement/version selection is minimal.
+- One active PDF is shown and queried at a time; supplementary-file browsing is not yet exposed.
 - No OCR, Zotero annotation compatibility, or exact evidence highlighting.
 - Page numbers depend on available GROBID TEI markers.
 - OpenAI is the only implemented AI provider, though interfaces are provider-neutral.

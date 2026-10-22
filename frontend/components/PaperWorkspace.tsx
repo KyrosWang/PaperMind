@@ -11,7 +11,7 @@ export function PaperWorkspace({ initialPaper }: { initialPaper: Paper }) {
   const [page, setPage] = useState(1);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const attachment = paper.attachments[0] ?? null;
+  const attachment = paper.attachments.find((item) => item.id === paper.active_attachment_id) ?? null;
 
   async function upload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -21,8 +21,14 @@ export function PaperWorkspace({ initialPaper }: { initialPaper: Paper }) {
     const form = new FormData();
     form.append("file", file);
     try {
-      const created = await apiJson<Attachment>(`/papers/${paper.id}/attachments`, { method: "POST", body: form });
-      setPaper((value) => ({ ...value, attachments: [created, ...value.attachments] }));
+      const suffix = paper.active_attachment_id ? "?replace_active=true" : "";
+      const created = await apiJson<Attachment>(`/papers/${paper.id}/attachments${suffix}`, { method: "POST", body: form });
+      setPaper((value) => ({
+        ...value,
+        active_attachment_id: created.id,
+        attachments: [created, ...value.attachments],
+        sections: [],
+      }));
     } catch (reason) {
       setUploadError(reason instanceof Error ? reason.message : "Upload failed");
     } finally {
@@ -43,7 +49,7 @@ export function PaperWorkspace({ initialPaper }: { initialPaper: Paper }) {
         </dl>
         <div className="mt-6 border-t border-black/10 pt-5">
           <label className="block cursor-pointer rounded-lg border border-moss px-3 py-2 text-center text-xs font-semibold text-moss hover:bg-mist">
-            {uploading ? "Uploading…" : attachment ? "Upload another PDF" : "Upload PDF"}
+            {uploading ? "Uploading…" : attachment ? "Replace active PDF" : "Upload PDF"}
             <input type="file" accept="application/pdf,.pdf" disabled={uploading} onChange={upload} className="hidden" />
           </label>
           {attachment && <p className="mt-2 text-xs capitalize text-black/45">Processing: {attachment.processing_status}</p>}

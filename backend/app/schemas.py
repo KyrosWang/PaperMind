@@ -34,6 +34,7 @@ class PaperRead(BaseModel):
     journal: str | None
     publication_year: int | None
     url: str | None
+    active_attachment_id: uuid.UUID | None
     authors: list[AuthorRead] = []
     attachments: list[AttachmentRead] = []
 
@@ -70,6 +71,7 @@ class ChatRequest(BaseModel):
 
 
 class CitationRead(BaseModel):
+    evidence_index: int
     chunk_id: uuid.UUID
     section: str | None
     page: int | None

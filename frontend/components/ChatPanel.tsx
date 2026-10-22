@@ -72,14 +72,14 @@ export function ChatPanel({ paperId, onEvidence }: { paperId: string; onEvidence
             <p className="whitespace-pre-wrap">{message.content}</p>
             {message.citations && message.citations.length > 0 && (
               <div className="mt-3 space-y-2 border-t border-black/10 pt-3">
-                {message.citations.map((citation, citationIndex) => (
+                {message.citations.map((citation) => (
                   <button
                     key={citation.chunk_id}
                     disabled={!citation.page}
                     onClick={() => citation.page && onEvidence(citation.page)}
                     className="block w-full rounded-lg border border-black/10 bg-paper p-2 text-left text-xs hover:border-moss disabled:cursor-default"
                   >
-                    <span className="font-semibold text-moss">[{citationIndex + 1}] {citation.section ?? "Section"}{citation.page ? ` · page ${citation.page}` : ""}</span>
+                    <span className="font-semibold text-moss">[{citation.evidence_index}] {citation.section ?? "Section"}{citation.page ? ` · page ${citation.page}` : ""}</span>
                     <span className="mt-1 line-clamp-2 block text-black/55">{citation.excerpt}</span>
                   </button>
                 ))}
